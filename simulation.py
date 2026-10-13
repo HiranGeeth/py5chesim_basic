@@ -15,6 +15,7 @@ import simpy
 from Cell import *
 from Results import *
 from UE import *
+from csv_logger import CSVLogger
 
 if os.path.exists("Statistics/live_state.json"):
     os.remove("Statistics/live_state.json")
@@ -196,9 +197,26 @@ procInter = env.process(interSliceSche1.resAlloc(env))
 for ueG in UEgroups:
     ueG.activateSliceScheds(interSliceSche1, env)
 
+# Start CSV logger process
+csv_logger = CSVLogger()
+# ---- CSV logger ----
+csv_logger = CSVLogger()
+
+def csv_logging_process(env, interSliceSche, interval, t_sim):
+    while env.now < (t_sim * 0.83):
+        yield env.timeout(interval)
+        for label, slice_obj in interSliceSche.slices.items():
+            if label == "LTE":
+                continue
+            csv_logger.log_row(env.now, label, slice_obj.schedulerDL, slice_obj)
+
+procCsvLog = env.process(csv_logging_process(env, interSliceSche1, measInterv, t_sim))
+
+
 # ----------------------------------------------------------------
 env.run(until=t_sim)
 # ----------------------------------------------------------------
+csv_logger.close()
 
 #      Closing statistic and debugging files
 
