@@ -428,55 +428,38 @@ class slice_framework:
 
 def getTbs(Ninfo: int, r: float) -> int:
     """
-    Calculates the transport block size (TBS) for a given amount of information to be transmitted and target code rate.
+    Calculates the transport block size (TBS) for a given amount of information
+    to be transmitted and target code rate.
 
-    :param Ninfo: An integer representing the amount of information to be transmitted.
-    :param r: A float representing the target code rate.
-    :return: An integer representing the calculated TBS value.
-
-    If Ninfo is less than 24, return 0. If Ninfo is between 24 and 3824, find the largest TBS value in the TBS table
-    that is less than Ninfo and return it. If Ninfo is greater than 3824, calculate TBS value based on the given formula.
-    If r is less than or equal to 1/4, calculate TBS value based on the given formula. If r is greater than 1/4,
-    calculate TBS value based on the given formula. Return the calculated TBS value.
+    :param Ninfo: Amount of information to be transmitted.
+    :param r: Target code rate.
+    :return: Calculated TBS value.
     """
-        
-    # If the amount of information to be transmitted is less than 24, return 0
+    tbsTable = loadtbsTable()
+
     if Ninfo < 24:
         return 0
 
-    # If the amount of information to be transmitted is between 24 and 3824, find the largest TBS (Transport Block Size) value in the TBS table
-    # that is less than Ninfo and return it
     if Ninfo <= 3824:
-        for i in range(len(self.tbsTable)):
-            if Ninfo < self.tbsTable[i]:
-                return self.tbsTable[i-1]
+        for i in range(len(tbsTable)):
+            if Ninfo < tbsTable[i]:
+                return tbsTable[i - 1]
+        return tbsTable[-1]   # Ninfo equals or exceeds last entry
 
-    # If the amount of information to be transmitted is greater than 3824, calculate TBS value based on the given formula
     else:
-        # Calculate n based on the formula
-        n = np.floor(np.log2(Ninfo-24))-5
-        
-        # Calculate Ninfo_ based on the formula
-        Ninfo_ = max(3840, pow(2,n) * np.round((Ninfo - 24)/(pow(2,n))) )
-        
-        # If r is less than or equal to 1/4, calculate TBS value based on the given formula
-        if r <= 1/4:
-            C = np.ceil((Ninfo_/+24)/3816)
-            TBS = 8*C*np.ceil((Ninfo_+24)/(8*C)) - 24
-            
-        # If r is greater than 1/4, calculate TBS value based on the given formula
-        else:
-            # If Ninfo_ is greater than 8424, calculate C based on the given formula
-            if Ninfo_ > 8424:
-                C = np.ceil((Ninfo_+24)/8424)
-                TBS = 8*C*np.ceil((Ninfo_+24)/(8*C)) - 24
-            # If Ninfo_ is less than or equal to 8424, calculate TBS value based on the given formula
-            else:
-                TBS = 8*np.ceil((Ninfo_+24)/8) - 24
+        n = np.floor(np.log2(Ninfo - 24)) - 5
+        Ninfo_ = max(3840, pow(2, n) * np.round((Ninfo - 24) / (pow(2, n))))
 
-    # Return the calculated TBS value
-    return TBS
-    
+        if r <= 1 / 4:
+            C = np.ceil((Ninfo_ + 24) / 3816)
+            TBS = 8 * C * np.ceil((Ninfo_ + 24) / (8 * C)) - 24
+        else:
+            if Ninfo_ > 8424:
+                C = np.ceil((Ninfo_ + 24) / 8424)
+                TBS = 8 * C * np.ceil((Ninfo_ + 24) / (8 * C)) - 24
+            else:
+                TBS = 8 * np.ceil((Ninfo_ + 24) / 8) - 24
+        return int(TBS)
 
 
 def loadModTable():

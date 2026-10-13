@@ -38,7 +38,7 @@ def _safe_savefig(fname, *args, **kwargs):
 plt.savefig = _safe_savefig
 
 bw = [
-    10
+    30
 ]  # MHz (FR1: 5, 10, 15, 20, 25, 30, 40, 50, 60, 80, 90, 100; FR2: 50, 100, 200, 400)
 
 print(f"Bandwidth: {bw} MHz")
@@ -124,6 +124,30 @@ UEgroup2 = UEgroup(
     "S37",
 )
 
+UEgroup3 = UEgroup(
+    8,          # nuDL: 8 mMTC users (mMTC = massive machine-type, many devices)
+    0,          # nuUL
+    50,         # pszDL: small packets (sensor readings, telemetry)
+    0,
+    10,         # parrDL: low arrival rate — mMTC sends infrequently
+    0,          # (10 ms inter-arrival → ~100 pkts/s per UE, sparse)
+    0,          # tstart
+    1,          # tend
+    'Constant', # distP: fixed-size packets (mMTC sensors are predictable)
+    'Constant', # distA: constant inter-arrival
+    "mmtc-0",   # label with "mmtc" → recognized as mMTC slice
+    100,        # dly: relaxed delay requirement (mMTC tolerates 100 ms)
+    "",         # avlty
+    "Rr",       # intra-slice scheduler
+    "SU",       # MIMO mode
+    1,          # layers: 1 layer per UE (low-capability devices)
+    cell1,
+    t_sim,
+    measInterv,
+    env,
+    "S37",      # SINR
+)
+
 """Group of users with defined traffic profile, capabilities and service requirements for which the sumulation will run.
 
 More than one can be instantiated in one simulation.
@@ -140,7 +164,7 @@ sinr: is a string starting starting with S if all ues have the same sinr or D if
 
 
 # Set UEgroups list according to the defined groups
-UEgroups = [UEgroup1, UEgroup2]
+UEgroups = [UEgroup1, UEgroup2, UEgroup3]
 
 """UE group list for the configured simulation"""
 #           Slices creation
