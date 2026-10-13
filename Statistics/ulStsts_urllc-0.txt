@@ -1,1 +1,0 @@
-time ue sinr MCS BLER ResourceUse sntPackets lstPackets rcvdBytes sliceLabel
