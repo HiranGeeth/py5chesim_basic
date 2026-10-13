@@ -1,0 +1,3 @@
+python plot_prbs.py for displaying plot (cmd)
+python simulation.py for running simulation (cmd)
+conda activate py5chesim before simulation.py (anaconda prompt or cmd)
