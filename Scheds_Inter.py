@@ -100,6 +100,38 @@ class RRplus_Scheduler(InterSliceScheduler):
                     slice.updateConfig(prbs)
 
             self.dbFile.write("<hr>")
+
+            # --- LIVE STATE EMISSION ---
+            from live_state import emit_state
+            slices_data = {}
+            for s in self.slices:
+                slc = self.slices[s]
+                # Get scheduler reference for KPIs
+                sch_dl = slc.schedulerDL
+                # Compute aggregate stats for this slice
+                conn_ues = list(sch_dl.ues.keys())
+                total_sent = sum(sch_dl.ues[ue].packetFlows[0].sentPackets for ue in conn_ues)
+                total_lost = sum(sch_dl.ues[ue].packetFlows[0].lostPackets for ue in conn_ues)
+                total_rcvd = sum(sch_dl.ues[ue].packetFlows[0].rcvdBytes for ue in conn_ues)
+                buffer_pkts = sch_dl.updSumPcks()
+                avg_sinr = sum(sch_dl.ues[ue].radioLinks.linkQuality for ue in conn_ues) / max(len(conn_ues), 1)
+                avg_mcs = sum(sch_dl.ues[ue].MCS for ue in conn_ues) / max(len(conn_ues), 1)
+
+                slices_data[s] = {
+                    "prbs": slc.PRBs,
+                    "sent": total_sent,
+                    "lost": total_lost,
+                    "plr": 100 * total_lost / max(total_sent, 1),
+                    "throughput": total_rcvd * 8 / 1000 / max(env.now, 1),  # Mbps approx
+                    "buffer": buffer_pkts,
+                    "sinr": round(avg_sinr, 1),
+                    "mcs": round(avg_mcs, 1),
+                    "numerology": int(slc.ttiBms * 15),
+                    "num_ues": len(conn_ues),
+                }
+
+            emit_state(int(env.now), slices_data)
+            # --- END LIVE STATE EMISSION ---
             yield env.timeout(self.granularity)
 
 

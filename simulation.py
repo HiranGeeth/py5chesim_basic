@@ -16,6 +16,11 @@ from Cell import *
 from Results import *
 from UE import *
 
+if os.path.exists("Statistics/live_state.json"):
+    os.remove("Statistics/live_state.json")
+if os.path.exists("Statistics/events.jsonl"):
+    os.remove("Statistics/events.jsonl")
+    
 # ------------------------------------------------------------------------------------------------------
 #              Cell & Simulation parameters
 # ------------------------------------------------------------------------------------------------------
