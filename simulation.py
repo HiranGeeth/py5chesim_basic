@@ -1,12 +1,12 @@
-#"""This is the simulation script.
+#This is the simulation script.
 #Simulation, cell and traffic profile parameters can be set here.
 
 #RUN THIS WITH:
 #activate py5chesim_dqn
 #cd "C:\Users\GeethD\Documents\Projects\Testing Py5cheSim\py5chesim"
-#python simulation.py
-#S
-#"""
+#in terminal and then run: streamlit run dashboard.py
+#in a new terminal, run: activate py5chesim_dqn and then python simulation.py
+
 import os
 import sys
 
@@ -20,7 +20,7 @@ if os.path.exists("Statistics/live_state.json"):
     os.remove("Statistics/live_state.json")
 if os.path.exists("Statistics/events.jsonl"):
     os.remove("Statistics/events.jsonl")
-    
+
 # ------------------------------------------------------------------------------------------------------
 #              Cell & Simulation parameters
 # ------------------------------------------------------------------------------------------------------
