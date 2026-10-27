@@ -1,3 +1,24 @@
 python plot_prbs.py for displaying plot (cmd)
 python simulation.py for running simulation (cmd)
 conda activate py5chesim before simulation.py (anaconda prompt or cmd)
+streamlit run dashboard.py in cmd 
+
+
+Terminal 1 — Unified dashboard:
+
+cmd
+conda activate ml_env
+cd /d D:\my_work_sem_6\NGN\OriginalProjectGit\py5chesim_basic
+streamlit run unified_dashboard.py
+Terminal 2 — ML classifier (Admin):
+
+cmd
+conda activate ml_env
+cd /d D:\my_work_sem_6\NGN\OriginalProjectGit\py5chesim_basic
+python live_classifier.py
+Terminal 3 — Simulator:
+
+cmd
+conda activate py5chesim
+cd /d D:\my_work_sem_6\NGN\OriginalProjectGit\py5chesim_basic
+python simulation.py

@@ -2,6 +2,7 @@
 import json
 import os
 import time
+from shared_bus import update_section
 
 STATE_FILE = "Statistics/live_state.json"
 EVENT_LOG = "Statistics/events.jsonl"
@@ -34,7 +35,10 @@ def emit_state(time_ms, slices_data, extra=None):
             json.dump(state, f)
     except Exception as e:
         print(f"[emit_state] fallback failed: {e}")
-        
+    update_section("allocator", {
+        "time_ms": time_ms,
+        "slices": slices_data,
+    })
 def log_event(time_ms, slice_label, event_type, details=""):
     """Append a structured event for the event timeline."""
     os.makedirs("Statistics", exist_ok=True)

@@ -1,262 +1,108 @@
-#This is the simulation script.
-#Simulation, cell and traffic profile parameters can be set here.
-
-#RUN THIS WITH:
-#activate py5chesim_dqn
-#cd "C:\Users\GeethD\Documents\Projects\Testing Py5cheSim\py5chesim"
-#in terminal and then run: streamlit run dashboard.py
-#in a new terminal, run: activate py5chesim_dqn and then python simulation.py
-
+"""
+Live Resource Allocator
+-----------------------
+Runs continuously in real-time.
+Reads live classifier predictions from the shared bus.
+Computes PRB allocations based on observed traffic weights.
+Writes allocation state back to the shared bus.
+"""
+import time
 import os
-import sys
-
-import simpy
-
-from Cell import *
-from Results import *
-from UE import *
-from csv_logger import CSVLogger
-
-if os.path.exists("Statistics/live_state.json"):
-    os.remove("Statistics/live_state.json")
-if os.path.exists("Statistics/events.jsonl"):
-    os.remove("Statistics/events.jsonl")
-
-# ------------------------------------------------------------------------------------------------------
-#              Cell & Simulation parameters
-# ------------------------------------------------------------------------------------------------------
-import os
-os.makedirs("Figures", exist_ok=True)
-
-import matplotlib.pyplot as plt
-_original_savefig = plt.savefig
-
-def _safe_savefig(fname, *args, **kwargs):
-    if isinstance(fname, str):
-        # Split into directory and filename, sanitize filename only
-        directory, filename = os.path.split(fname)
-        for ch in '<>:"\\|?*':
-            filename = filename.replace(ch, '_')
-        filename = filename.replace(']', '').replace('[', '')
-        fname = os.path.join(directory, filename) if directory else filename
-    return _original_savefig(fname, *args, **kwargs)
-
-plt.savefig = _safe_savefig
-
-bw = [
-    30
-]  # MHz (FR1: 5, 10, 15, 20, 25, 30, 40, 50, 60, 80, 90, 100; FR2: 50, 100, 200, 400)
-
-print(f"Bandwidth: {bw} MHz")
-"""List containing each CC's bandwidth for the simulation. """
-fr = "FR1"  # FR1 or FR2
-"""String with frequency range (FR) to use. 'FR1' for FR1, or 'FR2' for FR2."""
-band = "B1"
-"""String with used band for simulation. In TDD mode it is important to set correctly a band from the next list: n257, n258, n260, n261."""
-tdd = False
-"""Boolean indicating if the cell operates in TDD mode."""
-buf = 81920  # 10240 #
-"""Integer with the maximum Bytes the UE Bearer buffer can tolerate before dropping packets."""
-schedulerInter = "RRp"  # RRp for improved Round Robin, PFXX for Proportional Fair
-"""String indicating the Inter Slice Scheduler to use. For only one Slice simulations use ''.
-If the simulation includes more than one slice, set '' for Round Robin, 'RRp' for Round Robin Plus,
-or 'PFXY' for Proportional Fair with X=numExp and Y=denExp."""
-#                   Simulation parameters
-t_sim = 6000 # (ms)
-"""Simulation duration in milliseconds."""
-debMode = False  # to show queues information by TTI during simulation
-"""Boolean indicating if debugging mode is active. In that case, an html log file will be generated with schedulers operation.
-Note that in simulations with a high number of UEs this file can turn quite heavy."""
-measInterv = 100  # interval between meassures default 1000
-"""Time interval (in milliseconds) between meassures for statistics reports."""
-interSliceSchGr = 30  # 3000.0 # interSlice scheduler time granularity
-"""Inter slice scheduler time granularity in milliseconds."""
+from shared_bus import read_state, update_section
 
 # -----------------------------------------------------------------
-#              Simulation process activation
+# Allocator Configuration
 # -----------------------------------------------------------------
+TOTAL_PRBS = 160          # 30 MHz at 15 kHz SCS = 160 PRBs
+MIN_WEIGHT = 0.10         # Give every slice at least 10% to prevent starvation
+UPDATE_INTERVAL = 0.5     # Seconds between allocation updates
+LABEL_MAP = {
+    "embb":  "embb-0",
+    "urllc": "urllc-0",
+    "mmtc":  "mmtc-0",
+}
 
-env = simpy.Environment()
-"""Environment instance needed by simpy for runing PEM methods"""
-cell1 = Cell("c1", bw, fr, debMode, buf, tdd, interSliceSchGr, schedulerInter)
-"""Cell instance for running the simulation"""
-interSliceSche1 = cell1.interSliceSched
-"""interSliceScheduler instance"""
+# -----------------------------------------------------------------
+# Main Loop
+# -----------------------------------------------------------------
+def main():
+    print("="*60)
+    print("🚀 LIVE RESOURCE ALLOCATOR STARTED")
+    print(f"Total PRBs available: {TOTAL_PRBS}")
+    print(f"Update interval: {UPDATE_INTERVAL}s")
+    print("="*60)
 
+    # Keep track of our own internal state so the dashboard has data 
+    # even before the first classifier window finishes.
+    current_allocations = {
+        "embb-0": TOTAL_PRBS // 3,
+        "urllc-0": TOTAL_PRBS // 3,
+        "mmtc-0": TOTAL_PRBS // 3,
+    }
 
-UEgroup1 = UEgroup(
-    4,
-    0,
-    300,
-    0,
-    1,
-    0,
-    0,
-    1,
-    'Pareto',
-    'Constant',
-    "embb-0",
-    20,
-    "",
-    "Rr",
-    "SU",
-    4,
-    cell1,
-    t_sim,
-    measInterv,
-    env,
-    "S37",
-)  
+    try:
+        while True:
+            time.sleep(UPDATE_INTERVAL)
+            
+            # 1. Read live data from the ML classifier
+            state = read_state()
+            cls = state.get("classifier", {})
+            predictions = cls.get("predictions", [])
 
-UEgroup2 = UEgroup(
-    2,          # nuDL: 2 URLLC users
-    0,          # nuUL
-    100,        # pszDL: smaller packets (URLLC is typically small)
-    0,
-    2,          # parrDL: higher arrival rate → more frequent small packets
-    0,
-    0,
-    1,
-    'Pareto',
-    'Constant',
-    "urllc-0",  # label with "urllc" → recognized as URLLC slice
-    5,          # dly: strict 5 ms delay requirement
-    "",
-    "Rr",
-    "SU",
-    2,
-    cell1,
-    t_sim, measInterv, env,
-    "S37",
-)
+            if not predictions:
+                # If ML hasn't reported yet, just keep the previous allocation 
+                # but push it to the dashboard so the UI isn't blank.
+                pass
+            else:
+                # 2. Count the predicted slices
+                counts = {"embb-0": 0, "urllc-0": 0, "mmtc-0": 0}
+                for p in predictions:
+                    label = p.get("predicted_slice", "").lower()
+                    slice_name = LABEL_MAP.get(label)
+                    if slice_name:
+                        counts[slice_name] += 1
 
-UEgroup3 = UEgroup(
-    8,          # nuDL: 8 mMTC users (mMTC = massive machine-type, many devices)
-    0,          # nuUL
-    50,         # pszDL: small packets (sensor readings, telemetry)
-    0,
-    10,         # parrDL: low arrival rate — mMTC sends infrequently
-    0,          # (10 ms inter-arrival → ~100 pkts/s per UE, sparse)
-    0,          # tstart
-    1,          # tend
-    'Constant', # distP: fixed-size packets (mMTC sensors are predictable)
-    'Constant', # distA: constant inter-arrival
-    "mmtc-0",   # label with "mmtc" → recognized as mMTC slice
-    100,        # dly: relaxed delay requirement (mMTC tolerates 100 ms)
-    "",         # avlty
-    "Rr",       # intra-slice scheduler
-    "SU",       # MIMO mode
-    1,          # layers: 1 layer per UE (low-capability devices)
-    cell1,
-    t_sim,
-    measInterv,
-    env,
-    "S37",      # SINR
-)
+                total_preds = sum(counts.values())
+                
+                if total_preds > 0:
+                    # 3. Compute weights (with a minimum floor to avoid starvation)
+                    weights = {}
+                    for k, v in counts.items():
+                        raw_weight = v / total_preds
+                        weights[k] = max(raw_weight, MIN_WEIGHT)
+                    
+                    # Re-normalize so weights sum exactly to 1.0
+                    weight_sum = sum(weights.values())
+                    weights = {k: v / weight_sum for k, v in weights.items()}
 
-"""Group of users with defined traffic profile, capabilities and service requirements for which the sumulation will run.
+                    # 4. Calculate PRB allocations
+                    for slice_name, weight in weights.items():
+                        current_allocations[slice_name] = int(TOTAL_PRBS * weight)
 
-More than one can be instantiated in one simulation.
-For each one of them, the UEgroup instance must be added in the UEgroups list.
+                    # Print to terminal
+                    print(f"[Allocator] Live flows: {total_preds} | "
+                          f"eMBB: {current_allocations['embb-0']} PRBs | "
+                          f"URLLC: {current_allocations['urllc-0']} PRBs | "
+                          f"mMTC: {current_allocations['mmtc-0']} PRBs")
 
-UEgroupN = UEgroup(nuDL,nuUL,pszDL,pszUL,parrDL,parrUL, tstart, tend, distP, distA,
-label,dly,avlty,schedulerType,mimo_mode,layers,cell,hdr,t_sim,measInterv,env,sinr):
+            # 5. Push the finalized allocation to the shared bus for the dashboard
+            # We include some dummy PLR and Throughput to keep the UI happy.
+            slices_data = {}
+            for slice_name, prbs in current_allocations.items():
+                slices_data[slice_name] = {
+                    "prbs": prbs,
+                    "plr": 0.0,
+                    "throughput": (prbs / TOTAL_PRBS) * 100, # Fake throughput for UI visual
+                    "buffer": 0
+                }
 
-label: must contain substring according to the type of service: eMBB, mMTC, URLLC\n
-schedulerType: RR: Rounf Robin, PF: Proportional Fair (10, 11)\n
-mimo_mode: SU, MU\n
-layers: in SU-MIMO is the number of layers/UE, in MU-MIMO is the number of simultaneous UE to serve with the same resources\n
-sinr: is a string starting starting with S if all ues have the same sinr or D if not. The value next will be the initial sinr of each ue or the maximum."""
+            update_section("allocator", {
+                "time_ms": int(time.time() * 1000) % 100000, # Just a rolling counter for UI
+                "slices": slices_data
+            })
 
+    except KeyboardInterrupt:
+        print("\n[Allocator] Stopped by user.")
 
-# Set UEgroups list according to the defined groups
-UEgroups = [UEgroup1, UEgroup2, UEgroup3]
-
-"""UE group list for the configured simulation"""
-#           Slices creation
-for ueG in UEgroups:
-    interSliceSche1.createSlice(
-        ueG.req["reqDelay"],
-        ueG.req["reqThroughputDL"],
-        ueG.req["reqThroughputUL"],
-        ueG.req["reqAvailability"],
-        ueG.num_usersDL,
-        ueG.num_usersUL,
-        band,
-        debMode,
-        ueG.mmMd,
-        ueG.lyrs,
-        ueG.label,
-        ueG.sch,
-    )
-
-#      Schedulers activation (inter/intra)
-
-procCell = env.process(cell1.updateStsts(env, interv=measInterv, tSim=t_sim))
-procInter = env.process(interSliceSche1.resAlloc(env))
-for ueG in UEgroups:
-    ueG.activateSliceScheds(interSliceSche1, env)
-
-# Start CSV logger process
-csv_logger = CSVLogger()
-# ---- CSV logger ----
-csv_logger = CSVLogger()
-
-def csv_logging_process(env, interSliceSche, interval, t_sim):
-    while env.now < (t_sim * 0.83):
-        yield env.timeout(interval)
-        for label, slice_obj in interSliceSche.slices.items():
-            if label == "LTE":
-                continue
-            csv_logger.log_row(env.now, label, slice_obj.schedulerDL, slice_obj)
-
-procCsvLog = env.process(csv_logging_process(env, interSliceSche1, measInterv, t_sim))
-
-
-# ----------------------------------------------------------------
-env.run(until=t_sim)
-# ----------------------------------------------------------------
-csv_logger.close()
-
-#      Closing statistic and debugging files
-
-for slice in list(cell1.slicesStsts.keys()):
-    cell1.slicesStsts[slice]["DL"].close()
-    cell1.slicesStsts[slice]["UL"].close()
-for slice in list(interSliceSche1.slices.keys()):
-    interSliceSche1.slices[slice].schedulerDL.dbFile.close()
-    if slice != "LTE":
-        interSliceSche1.slices[slice].schedulerUL.dbFile.close()
-
-# ----------------------------------------------------------------
-#                          RESULTS
-# ----------------------------------------------------------------
-# Show average PLR and Throughput in any case simulation and plots
-for UEg in UEgroups:
-    print(
-        Format.CBOLD
-        + Format.CBLUE
-        + "\n--------------------------------------------------"
-        + Format.CEND
-    )
-    print(
-        Format.CBOLD
-        + Format.CBLUE
-        + "                 SLICE: "
-        + UEg.label
-        + "                  "
-        + Format.CEND
-    )
-    print(
-        Format.CBOLD
-        + Format.CBLUE
-        + "--------------------------------------------------\n"
-        + Format.CEND
-    )
-    UEg.printSliceResults(interSliceSche1, t_sim, bw, measInterv)
-print(
-    Format.CBOLD
-    + Format.CBLUE
-    + "\n--------------------------------------------------"
-    + Format.CEND
-)
+if __name__ == "__main__":
+    main()
